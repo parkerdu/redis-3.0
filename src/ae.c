@@ -164,7 +164,7 @@ void aeStop(aeEventLoop *eventLoop) {
 }
 
 /*
- * 根据 mask 参数的值，监听 fd 文件的状态，
+ * 根据 mask 参数的值， 将fd 文件添加到epoll监听集合并注册相应的proc处理函数，
  * 当 fd 可用时，执行 proc 函数
  */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
@@ -180,11 +180,11 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
     // 取出文件事件结构
     aeFileEvent *fe = &eventLoop->events[fd];
 
-    // 监听指定 fd 的指定事件
+    // 将当前文件描述符fd添加到epoll监听集合 //监听指定 fd 的指定事件
     if (aeApiAddEvent(eventLoop, fd, mask) == -1)
         return AE_ERR;
 
-    // 设置文件事件类型，以及事件的处理器
+    // 对于不同的事件类型，注册不同的处理函数 //设置文件事件类型，以及事件的处理器
     fe->mask |= mask;
     if (mask & AE_READABLE) fe->rfileProc = proc;
     if (mask & AE_WRITABLE) fe->wfileProc = proc;
@@ -556,7 +556,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             }
         }
 
-        // 处理文件事件，阻塞时间由 tvp 决定
+        // epoll_wait返回就绪时间 处理文件事件，阻塞时间由 tvp 决定
         numevents = aeApiPoll(eventLoop, tvp);
         for (j = 0; j < numevents; j++) {
             // 从已就绪数组中获取事件

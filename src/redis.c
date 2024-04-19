@@ -2081,7 +2081,7 @@ void initServer() {
     server.db = zmalloc(sizeof(redisDb)*server.dbnum);
 
     /* Open the TCP listening socket for the user commands. */
-    // 打开 TCP 监听端口，用于等待客户端的命令请求
+    // 打开 TCP 监听端口，用于等待客户端的命令请求，监听的文件描述符存放在server.ipfd中
     if (server.port != 0 &&
         listenToPort(server.port,server.ipfd,&server.ipfd_count) == REDIS_ERR)
         exit(1);

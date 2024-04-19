@@ -80,6 +80,7 @@ struct aeEventLoop;
  *
  * 事件接口
  */
+// acceptTcpHandler 就是该类型
 typedef void aeFileProc(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask);
 typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *clientData);
 typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientData);

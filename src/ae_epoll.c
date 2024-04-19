@@ -95,7 +95,7 @@ static void aeApiFree(aeEventLoop *eventLoop) {
 }
 
 /*
- * 关联给定事件到 fd
+ * epoll_ctl 添加事件到监听集合， 关联给定事件到 fd
  */
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     aeApiState *state = eventLoop->apidata;

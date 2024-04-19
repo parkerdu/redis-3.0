@@ -214,6 +214,7 @@ redisClient *createClient(int fd) {
  * 通常在每个回复被创建时调用，如果函数返回 REDIS_ERR ，
  * 那么没有数据会被追加到输出缓冲区。
  */
+// 将待写的connect socket注册sendReplyToClient回调函数并添加到监听集合
 int prepareClientToWrite(redisClient *c) {
 
     // LUA 脚本环境所使用的伪客户端总是可写的
@@ -406,7 +407,7 @@ void _addReplyStringToList(redisClient *c, char *s, size_t len) {
 
 void addReply(redisClient *c, robj *obj) {
 
-    // 为客户端安装写处理器到事件循环
+    // 将待写的connect socket注册sendReplyToClient回调函数并添加到监听集合 为客户端安装写处理器到事件循环
     if (prepareClientToWrite(c) != REDIS_OK) return;
 
     /* This is an important place where we can avoid copy-on-write
@@ -746,7 +747,7 @@ void copyClientOutputBuffer(redisClient *dst, redisClient *src) {
 }
 
 /*
- * TCP 连接 accept 处理器
+ * 基于连接文件描述符，创建客户端结构体，TCP 连接 accept 处理器
  */
 #define MAX_ACCEPTS_PER_CALL 1000
 static void acceptCommonHandler(int fd, int flags) {
@@ -799,7 +800,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     REDIS_NOTUSED(privdata);
 
     while(max--) {
-        // accept 客户端连接
+        // 获取连接文件描述符，accept 客户端连接
         cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);
         if (cfd == ANET_ERR) {
             if (errno != EWOULDBLOCK)
@@ -1040,10 +1041,15 @@ void freeClientsInAsyncFreeQueue(void) {
 }
 
 /*
- * 负责传送命令回复的写处理器
+ * 处理写就绪的connect socket, 将reply写给client, // 负责传送命令回复的写处理器
+ 这里需要确认一个问题，redis使用的是level方式还是edag边界方式?????
+ 从下面代码来看有点像level模式
+ 当本次写入的字节量超过REDIS_MAX_WRITE_PER_EVENT 64k时候，会中断本次写入，那么就得由内核重新将该socket
+ 加入监听集合，等待下一次就绪再继续写入
  */
 void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     redisClient *c = privdata;
+    // 这里nwritten代表一次write的字节数，totwritten代表这次函数调用总写入的字节数
     int nwritten = 0, totwritten = 0, objlen;
     size_t objmem;
     robj *o;
@@ -1058,7 +1064,7 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
 
             // c->bufpos > 0
 
-            // 写入内容到套接字
+            // 写入内容到套接字内核缓冲区
             // c->sentlen 是用来处理 short write 的
             // 当出现 short write ，导致写入未能一次完成时，
             // c->buf+c->sentlen 就会偏移到正确（未写入）内容的位置上。
@@ -1066,14 +1072,14 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
             // 出错则跳出
             if (nwritten <= 0) break;
             // 成功写入则更新写入计数器变量
-            c->sentlen += nwritten;
-            totwritten += nwritten;
+            c->sentlen += nwritten; // sent len代表所有函数调用已经往socket中写入的总字节数
+            totwritten += nwritten; // total written代表这次函数调用总写入的字节数
 
             /* If the buffer was sent, set bufpos to zero to continue with
              * the remainder of the reply. */
             // 如果缓冲区中的内容已经全部写入完毕
             // 那么清空客户端的两个计数器变量
-            if (c->sentlen == c->bufpos) {
+            if (c->sentlen == c->bufpos) {  // 已发送 == 总量
                 c->bufpos = 0;
                 c->sentlen = 0;
             }
@@ -1159,7 +1165,7 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     if (c->bufpos == 0 && listLength(c->reply) == 0) {
         c->sentlen = 0;
 
-        // 删除 write handler
+        // 所有数据写入完毕，从epoll监听集合中，删除对当前socket的监听 write handler
         aeDeleteFileEvent(server.el,c->fd,AE_WRITABLE);
 
         /* Close connection after entire reply has been sent. */
